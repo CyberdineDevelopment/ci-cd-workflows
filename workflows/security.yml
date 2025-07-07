@@ -1,0 +1,67 @@
+name: Security Scanning
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly on Monday
+  workflow_dispatch:
+
+jobs:
+  scan:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      issues: write
+      
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Check for vulnerable packages
+      run: |
+        dotnet restore
+        dotnet list package --vulnerable --include-transitive > vulnerable-packages.txt
+        if grep -q "has the following vulnerable packages" vulnerable-packages.txt; then
+          echo "::error::Vulnerable packages found"
+          cat vulnerable-packages.txt
+          
+          # Create issue if vulnerabilities found
+          gh issue create \
+            --title "Security: Vulnerable packages detected" \
+            --body "$(cat vulnerable-packages.txt)" \
+            --label "security,dependencies"
+          exit 1
+        fi
+
+    - name: Run Trivy security scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+
+    - name: Upload Trivy results
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: SBOM Generation
+      uses: CycloneDX/gh-dotnet-generate-sbom@v1
+      with:
+        path: './'
+        json: true
+        github-bearer-token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload SBOM
+      uses: actions/upload-artifact@v4
+      with:
+        name: sbom
+        path: bom.json

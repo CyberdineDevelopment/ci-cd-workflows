@@ -1,0 +1,196 @@
+name: .NET CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  NUGET_XMLDOC_MODE: 'skip'
+
+jobs:
+  build:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: |
+          9.0.x
+          10.0.x
+        cache: true
+        cache-dependency-path: '**/packages.lock.json'
+
+    - name: Install tools
+      run: |
+        dotnet tool restore
+        dotnet tool install --global nbgv
+
+    - name: Set version
+      id: nbgv
+      uses: dotnet/nbgv@v0.4.2
+      with:
+        setAllVars: true
+
+    - name: Display version
+      run: |
+        echo "Version: ${{ steps.nbgv.outputs.Version }}"
+        echo "SemVer2: ${{ steps.nbgv.outputs.SemVer2 }}"
+        echo "NuGet Version: ${{ steps.nbgv.outputs.NuGetPackageVersion }}"
+        nbgv get-version
+
+    - name: Restore dependencies
+      run: dotnet restore --locked-mode
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Test
+      run: |
+        if [ -d "tests" ] && [ "$(ls -A tests)" ]; then
+          dotnet test --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+        else
+          echo "No tests found, skipping test step"
+        fi
+
+    - name: Generate coverage report
+      if: ${{ hashFiles('tests/**/*.csproj') != '' }}
+      uses: danielpalme/ReportGenerator-GitHub-Action@5.2.0
+      with:
+        reports: coverage/**/coverage.cobertura.xml
+        targetdir: coverage/report
+        reporttypes: 'HtmlInline;Cobertura;MarkdownSummaryGithub'
+
+    - name: Upload coverage reports
+      if: ${{ hashFiles('tests/**/*.csproj') != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: coverage/report
+
+    - name: Create NuGet package
+      if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')
+      run: |
+        if [ -d "src" ] && [ "$(ls -A src)" ]; then
+          dotnet pack --configuration Release --no-build --output ./artifacts
+        else
+          echo "No source projects found, skipping pack step"
+        fi
+
+    - name: Upload artifacts
+      if: (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) && hashFiles('src/**/*.csproj') != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./artifacts/*.nupkg
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: csharp
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Build for CodeQL
+      run: |
+        if [ -d "src" ] && [ "$(ls -A src)" ]; then
+          dotnet build --configuration Release
+        else
+          echo "No source projects found, creating dummy project for CodeQL"
+          mkdir -p temp
+          cd temp
+          dotnet new classlib -n TempLib
+          dotnet build
+          cd ..
+        fi
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+
+    - name: Run Microsoft Security DevOps
+      uses: microsoft/security-devops-action@v1
+      id: msdo
+      continue-on-error: true
+
+    - name: Upload MSDO results
+      if: steps.msdo.outputs.sarifFile != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.msdo.outputs.sarifFile }}
+
+    - name: Check for vulnerable packages
+      run: |
+        dotnet restore
+        dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+        ! grep -q "has the following vulnerable packages" vulnerable.txt
+
+  publish:
+    name: Publish Package
+    needs: [build, security]
+    if: (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) && github.event.repository.name != 'ci-cd-workflows'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://github.com/cyberdinedevelopment/${{ github.event.repository.name }}/packages
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: nuget-packages
+        path: ./artifacts
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '9.0.x'
+
+    - name: Publish to GitHub Packages
+      run: |
+        dotnet nuget push "./artifacts/*.nupkg" \
+          --source "https://nuget.pkg.github.com/cyberdinedevelopment/index.json" \
+          --api-key ${{ secrets.GITHUB_TOKEN }} \
+          --skip-duplicate
+
+    - name: Publish to NuGet.org
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        dotnet nuget push "./artifacts/*.nupkg" \
+          --source "https://api.nuget.org/v3/index.json" \
+          --api-key ${{ secrets.NUGET_API_KEY }} \
+          --skip-duplicate
