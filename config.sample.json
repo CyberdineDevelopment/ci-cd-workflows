@@ -1,0 +1,8 @@
+{
+  "Organization": "cyberdinedevelopment",
+  "DefaultPath": "D:\\fractaldataworks",
+  "DefaultBranch": "master",
+  "RepositoryVisibility": "private",
+  "ScriptPath": "D:\\fractaldataworks\\ci-cd-workflows\\scripts",
+  "LastUpdated": "2024-07-07 14:45:00"
+}

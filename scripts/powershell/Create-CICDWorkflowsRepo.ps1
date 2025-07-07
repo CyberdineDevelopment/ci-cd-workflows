@@ -12,6 +12,10 @@ param(
     [string]$DefaultBranch = "master",
     
     [Parameter(Mandatory = $false)]
+    [ValidateSet("private", "public")]
+    [string]$RepositoryVisibility = "public",
+    
+    [Parameter(Mandatory = $false)]
     [switch]$CreateTestRepo
 )
 
@@ -34,8 +38,9 @@ function New-CICDWorkflowsRepo {
     
     # Create repository
     try {
+        $visibilityFlag = if ($RepositoryVisibility -eq "public") { "--public" } else { "--private" }
         gh repo create "${Organization}/ci-cd-workflows" `
-            --public `
+            $visibilityFlag `
             --description "CI/CD workflow templates and scripts for CyberDine Development" `
             --gitignore "VisualStudio" `
             --license "MIT" `

@@ -14,7 +14,23 @@ This repository contains CI/CD workflow templates and setup scripts for CyberDin
 
 ## Quick Start
 
-### Create New Repositories
+### Complete Setup (Recommended)
+
+For first-time setup with configuration management:
+
+**Bash (Linux/macOS/WSL):**
+```bash
+cd scripts/bash
+./setup-all.sh
+```
+
+**PowerShell (Windows):**
+```powershell
+cd scripts\powershell
+.\Setup-All.ps1
+```
+
+### Create New Repositories Only
 
 **Bash (Linux/macOS/WSL):**
 ```bash
@@ -27,6 +43,17 @@ cd scripts/bash
 cd scripts\powershell
 .\Setup-CICDRepos.ps1
 ```
+
+## Configuration Management
+
+The setup scripts now support configuration management:
+
+- **Organization name**: Your GitHub organization
+- **Default path**: Where repositories are cloned
+- **Repository visibility**: Private or public repositories
+- **Default branch**: Branch name (typically 'master' or 'main')
+
+Configuration is saved to `config.json` (gitignored) and reused for subsequent runs.
 
 ### Repository Templates Created
 

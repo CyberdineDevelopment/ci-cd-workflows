@@ -68,14 +68,47 @@ Creates this ci-cd-workflows repository and copies all scripts.
 - Adds documentation
 - Optionally creates test repository
 
-### setup-all.sh
+### setup-all.sh / Setup-All.ps1
 
-Master setup script that orchestrates the entire CI/CD setup.
+Master setup scripts that orchestrate the entire CI/CD setup with configuration management.
 
 **Features:**
-- Runs create-cicd-workflows-repo.sh
+- Interactive configuration setup
+- Saves/loads configuration from JSON file
+- Runs create-cicd-workflows-repo script
 - Optionally creates all repositories
 - Provides clear next steps
+- Cross-platform compatibility
+
+**Configuration Options:**
+- Organization name
+- Default repository path
+- Repository visibility (private/public)
+- Default branch name
+
+**Usage:**
+```bash
+# First time setup (prompts for configuration)
+./setup-all.sh
+
+# Force reconfiguration
+./setup-all.sh --reconfigure
+
+# Use custom config file
+./setup-all.sh --config "../config.json"
+```
+
+**PowerShell:**
+```powershell
+# First time setup
+.\Setup-All.ps1
+
+# Force reconfiguration
+.\Setup-All.ps1 -ReconfigureAll
+
+# Custom config path
+.\Setup-All.ps1 -ConfigPath "..\config.json"
+```
 
 ## Script Configuration
 

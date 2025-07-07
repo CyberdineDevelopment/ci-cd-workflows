@@ -13,6 +13,10 @@ param(
     [string]$DefaultBranch = "master",
     
     [Parameter(Mandatory = $false)]
+    [ValidateSet("private", "public")]
+    [string]$RepositoryVisibility = "private",
+    
+    [Parameter(Mandatory = $false)]
     [switch]$SkipBranchProtection,
     
     [Parameter(Mandatory = $false)]
@@ -99,8 +103,9 @@ function New-GitHubRepository {
     
     try {
         # Create without clone first
+        $visibilityFlag = if ($RepositoryVisibility -eq "public") { "--public" } else { "--private" }
         gh repo create "${Organization}/${RepoName}" `
-            --private `
+            $visibilityFlag `
             --description "${Description}" `
             --gitignore "VisualStudio" `
             --license "MIT" `
