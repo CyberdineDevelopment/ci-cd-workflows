@@ -383,7 +383,9 @@ This repository contains library packages for .NET development. To use these pac
 MIT
 "@ | Out-File -FilePath "README.md" -Encoding utf8
 
-    # Create nuget.config for internal package dependencies
+    # Create nuget.config in home directory for internal package dependencies
+    $nugetDir = "$env:APPDATA\NuGet"
+    if (!(Test-Path $nugetDir)) { New-Item -ItemType Directory -Path $nugetDir -Force | Out-Null }
     @'
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -401,7 +403,7 @@ MIT
     </packageSource>
   </packageSourceMapping>
 </configuration>
-'@ | Out-File -FilePath "nuget.config" -Encoding utf8
+'@ | Out-File -FilePath "$nugetDir\NuGet.Config" -Encoding utf8
 
     # Create .editorconfig
     @'
@@ -427,28 +429,6 @@ indent_size = 2
 [*.md]
 trim_trailing_whitespace = false
 '@ | Out-File -FilePath ".editorconfig" -Encoding utf8
-
-    # Create SECURITY.md
-    @'
-# Security Policy
-
-## Supported Versions
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
-
-## Reporting a Vulnerability
-
-Please report security vulnerabilities by emailing security@cyberdinedevelopment.com
-
-We will acknowledge receipt within 48 hours and provide a detailed response within 7 days.
-
-## Security Update Policy
-
-Security updates are released as soon as possible after a vulnerability is confirmed.
-'@ | Out-File -FilePath "SECURITY.md" -Encoding utf8
 
     # Create .github/dependabot.yml
     @'

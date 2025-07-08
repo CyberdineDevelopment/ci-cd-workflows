@@ -485,8 +485,9 @@ EOF
         create_readme
     fi
     
-    # Create nuget.config for internal package dependencies
-    cat > nuget.config << EOF
+    # Create nuget.config in home directory for internal package dependencies
+    mkdir -p ~/.nuget/NuGet
+    cat > ~/.nuget/NuGet/NuGet.Config << EOF
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <packageSources>
@@ -528,28 +529,6 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
-EOF
-
-    # Create SECURITY.md
-    cat > SECURITY.md << 'EOF'
-# Security Policy
-
-## Supported Versions
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
-
-## Reporting a Vulnerability
-
-Please report security vulnerabilities by emailing security@cyberdinedevelopment.com
-
-We will acknowledge receipt within 48 hours and provide a detailed response within 7 days.
-
-## Security Update Policy
-
-Security updates are released as soon as possible after a vulnerability is confirmed.
 EOF
 
     # Create .github/dependabot.yml
