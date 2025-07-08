@@ -4,7 +4,7 @@
 set -e
 
 # Default configuration
-CONFIG_FILE="../../config.json"
+CONFIG_FILE="../../../config.json"
 REPO_NAME=""
 LICENSE_OVERRIDE=""
 
@@ -387,7 +387,7 @@ setup_repository_files() {
     
     # Copy workflow templates from the workflows directory
     local script_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
-    local workflow_dir="$script_dir/../../workflows"
+    local workflow_dir="$script_dir/../../../workflows"
     if [[ -d "$workflow_dir" ]]; then
         cp "$workflow_dir/dotnet-ci-cd.yml" .github/workflows/ 2>/dev/null || true
         cp "$workflow_dir/security.yml" .github/workflows/ 2>/dev/null || true

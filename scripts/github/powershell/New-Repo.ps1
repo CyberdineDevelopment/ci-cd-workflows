@@ -6,7 +6,7 @@ param(
     [string]$RepositoryName,
     
     [Parameter(Mandatory = $false)]
-    [string]$ConfigPath = "..\..\config.json",
+    [string]$ConfigPath = "..\..\..\config.json",
     
     [Parameter(Mandatory = $false)]
     [ValidateSet("Apache-2.0", "MIT")]
@@ -262,8 +262,8 @@ function Set-RepositoryFiles {
     New-Item -ItemType Directory -Force -Path ".github\workflows", "src", "tests", "docs", ".config" | Out-Null
     
     # Copy workflow templates from the workflows directory
-    $scriptDir = Split-Path $PSScriptRoot -Parent
-    $workflowDir = Join-Path $scriptDir "workflows"
+    $repoRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) -Parent
+    $workflowDir = Join-Path $repoRoot "workflows"
     if (Test-Path $workflowDir) {
         Copy-Item "$workflowDir\dotnet-ci-cd.yml" ".github\workflows\" -ErrorAction SilentlyContinue
         Copy-Item "$workflowDir\security.yml" ".github\workflows\" -ErrorAction SilentlyContinue

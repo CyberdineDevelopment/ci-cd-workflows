@@ -1,0 +1,266 @@
+# Azure DevOps Pipeline for .NET CI/CD
+name: .NET-CI-CD-$(Date:yyyyMMdd)$(Rev:.r)
+
+parameters:
+- name: environment
+  displayName: 'Target Environment'
+  type: string
+  default: 'development'
+  values:
+  - development
+  - staging
+  - production
+- name: runSecurityScans
+  displayName: 'Run Security Scans'
+  type: boolean
+  default: true
+
+trigger:
+  branches:
+    include:
+    - master
+    - develop
+    - release/*
+    - feature/*
+  tags:
+    include:
+    - v*
+    - release-*
+  paths:
+    exclude:
+    - docs/*
+    - '*.md'
+
+pr:
+  branches:
+    include:
+    - master
+    - develop
+  autoCancel: true
+
+schedules:
+- cron: "0 2 * * *"
+  displayName: Daily Security Scan
+  branches:
+    include:
+    - master
+    - develop
+  always: true
+
+variables:
+  buildConfiguration: 'Release'
+  NUGET_PACKAGES: $(Pipeline.Workspace)/.nuget/packages
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_XMLDOC_MODE: skip
+  
+# Variable groups based on branch
+- ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/master') }}:
+  - group: 'production-secrets'
+- ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}:
+  - group: 'development-secrets'
+- ${{ if startsWith(variables['Build.SourceBranch'], 'refs/heads/release/') }}:
+  - group: 'staging-secrets'
+
+stages:
+- stage: Version
+  displayName: 'Semantic Versioning'
+  jobs:
+  - job: SetVersion
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
+      fetchDepth: 0
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Install nbgv tool'
+      inputs:
+        command: 'custom'
+        custom: 'tool'
+        arguments: 'install --tool-path . nbgv --ignore-failed-sources'
+    
+    - script: |
+        ./nbgv cloud -c -a
+        echo "##vso[build.updatebuildnumber]$(GitBuildVersion)"
+      displayName: 'Set Version Variables'
+
+- stage: Build
+  displayName: 'Build and Test'
+  dependsOn: Version
+  jobs:
+  - job: BuildMatrix
+    strategy:
+      matrix:
+        NET9:
+          dotnetVersion: '9.0.x'
+        NET10:
+          dotnetVersion: '10.0.x'
+      maxParallel: 2
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Install .NET $(dotnetVersion)'
+      inputs:
+        packageType: 'sdk'
+        version: $(dotnetVersion)
+        performMultiLevelLookup: true
+        includePreviewVersions: true
+    
+    - task: Cache@2
+      displayName: 'Cache NuGet packages'
+      inputs:
+        key: 'nuget | "$(Agent.OS)" | **/packages.lock.json,!**/bin/**,!**/obj/**'
+        restoreKeys: |
+          nuget | "$(Agent.OS)"
+          nuget
+        path: '$(NUGET_PACKAGES)'
+        cacheHitVar: 'CACHE_RESTORED'
+    
+    - task: NuGetAuthenticate@1
+      displayName: 'Authenticate with Azure Artifacts'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore packages'
+      condition: ne(variables.CACHE_RESTORED, true)
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+        feedsToUse: 'config'
+        nugetConfigPath: 'nuget.config'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Build solution'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-restore ${{ if eq(variables[''Build.SourceBranch''], ''refs/heads/develop'') }} --warnaserror-:nullable'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Run tests'
+      inputs:
+        command: 'test'
+        projects: '**/*Test*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-build --collect:"XPlat Code Coverage" --logger trx'
+        publishTestResults: true
+      continueOnError: ${{ eq(variables['Build.SourceBranch'], 'refs/heads/develop') }}
+    
+    - task: PublishCodeCoverageResults@1
+      displayName: 'Publish code coverage'
+      inputs:
+        codeCoverageTool: 'Cobertura'
+        summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+
+- stage: SecurityScanning
+  displayName: 'Security Scanning'
+  dependsOn: Build
+  condition: and(succeeded(), eq('${{ parameters.runSecurityScans }}', 'true'))
+  jobs:
+  - job: SecurityScans
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - task: MicrosoftSecurityDevOps@1
+      displayName: 'Microsoft Security DevOps Scan'
+      inputs:
+        policy: 'microsoft'
+        categories: 'artifacts,IaC,containers'
+        break: true
+    
+    - script: |
+        dotnet list package --vulnerable --include-transitive 2>&1 | tee nuget-vulnerabilities.log
+        if grep -q -i "critical\|high" nuget-vulnerabilities.log; then
+          echo "##vso[task.logissue type=error]Critical vulnerabilities found"
+          exit 1
+        fi
+      displayName: 'Check for vulnerable packages'
+    
+    - task: CmdLine@2
+      displayName: 'Install CycloneDX'
+      inputs:
+        script: 'dotnet tool install --global CycloneDX'
+    
+    - script: |
+        dotnet CycloneDX $(System.DefaultWorkingDirectory) --json --output $(Build.ArtifactStagingDirectory)/sbom
+      displayName: 'Generate SBOM'
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Security Reports'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'security-reports'
+
+- stage: Package
+  displayName: 'Package and Publish'
+  dependsOn: 
+  - Build
+  - SecurityScanning
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - job: PackageArtifacts
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureKeyVault@2
+      displayName: 'Get secrets from Key Vault'
+      inputs:
+        azureSubscription: 'azure-service-connection'
+        KeyVaultName: '$(keyVaultName)'
+        SecretsFilter: 'nuget-api-key,internal-feed-pat'
+        RunAsPreJob: false
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Pack NuGet packages'
+      inputs:
+        command: 'pack'
+        packagesToPack: '**/*.csproj;!**/*Test*.csproj'
+        versioningScheme: 'byEnvVar'
+        versionEnvVar: 'GitBuildVersion'
+        packDirectory: '$(Build.ArtifactStagingDirectory)/packages'
+        includesymbols: true
+        includesource: true
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Push to Azure Artifacts'
+      inputs:
+        command: 'push'
+        packagesToPush: '$(Build.ArtifactStagingDirectory)/packages/*.nupkg'
+        nuGetFeedType: 'internal'
+        publishVstsFeed: '$(System.TeamProject)/dotnet-packages'
+        allowPackageConflicts: false
+    
+    - task: NuGetCommand@2
+      displayName: 'Push to NuGet.org'
+      condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), startsWith(variables['Build.SourceBranch'], 'refs/tags/v')))
+      inputs:
+        command: 'push'
+        packagesToPush: '$(Build.ArtifactStagingDirectory)/packages/*.nupkg;!$(Build.ArtifactStagingDirectory)/packages/*.symbols.nupkg'
+        nuGetFeedType: 'external'
+        publishFeedCredentials: 'nuget-org-connection'
+
+- stage: Deploy
+  displayName: 'Deploy to ${{ parameters.environment }}'
+  dependsOn: Package
+  condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - deployment: DeployApplication
+    environment: ${{ parameters.environment }}
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureKeyVault@2
+            displayName: 'Get deployment secrets'
+            inputs:
+              azureSubscription: 'azure-service-connection'
+              KeyVaultName: '${{ parameters.environment }}-keyvault'
+              SecretsFilter: '*'
+          
+          - script: |
+              echo "Deploying to ${{ parameters.environment }}"
+              echo "Using connection string from Key Vault"
+            displayName: 'Deploy application'

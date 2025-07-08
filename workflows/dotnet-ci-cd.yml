@@ -64,6 +64,9 @@ jobs:
 
     - name: Configure GitHub Packages
       run: |
+        # Remove existing github source if it exists
+        dotnet nuget remove source github || true
+        # Add github source with authentication
         dotnet nuget add source https://nuget.pkg.github.com/cyberdinedevelopment/index.json \
           --name github \
           --username ${{ github.actor }} \
@@ -134,8 +137,8 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    # Only run security scanning on master and release branches (not for rapid development)
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')
+    # Run security scanning on master, develop, and release branches
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/') || startsWith(github.ref, 'refs/tags/v')
     permissions:
       actions: read
       contents: read

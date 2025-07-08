@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$ConfigPath = "..\..\config.json",
+    [string]$ConfigPath = "..\..\..\config.json",
     
     [Parameter(Mandatory = $false)]
     [switch]$ReconfigureAll,

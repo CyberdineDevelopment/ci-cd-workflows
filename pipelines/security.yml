@@ -1,0 +1,266 @@
+# Azure DevOps Security Scanning Pipeline
+name: Security-Scan-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+
+schedules:
+- cron: "0 8 * * 1"
+  displayName: Weekly Security Audit (Monday 8 AM)
+  branches:
+    include:
+    - master
+    - develop
+    - release/*
+  always: true
+
+parameters:
+- name: scanLevel
+  displayName: 'Security Scan Level'
+  type: string
+  default: 'standard'
+  values:
+  - quick
+  - standard
+  - deep
+- name: createWorkItems
+  displayName: 'Create Work Items for Vulnerabilities'
+  type: boolean
+  default: true
+
+variables:
+  buildConfiguration: 'Release'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+stages:
+- stage: SecurityAudit
+  displayName: 'Comprehensive Security Audit'
+  jobs:
+  - job: VulnerabilityScanning
+    displayName: 'Vulnerability Scanning'
+    pool:
+      vmImage: 'windows-latest'
+    steps:
+    - checkout: self
+      fetchDepth: 0
+    
+    - task: UseDotNet@2
+      displayName: 'Install .NET SDKs'
+      inputs:
+        packageType: 'sdk'
+        version: '9.0.x'
+        performMultiLevelLookup: true
+        includePreviewVersions: true
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore packages'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+        feedsToUse: 'config'
+    
+    # Check for vulnerable packages
+    - task: PowerShell@2
+      displayName: 'Check for vulnerable NuGet packages'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $vulnerablePackages = @()
+          $output = & dotnet list package --vulnerable --include-transitive 2>&1
+          
+          Write-Host "Vulnerability scan output:"
+          Write-Host $output
+          
+          $criticalFound = $false
+          $highFound = $false
+          
+          foreach ($line in $output) {
+            if ($line -match "Critical|High") {
+              if ($line -match "Critical") { $criticalFound = $true }
+              if ($line -match "High") { $highFound = $true }
+              $vulnerablePackages += $line
+            }
+          }
+          
+          if ($vulnerablePackages.Count -gt 0) {
+            Write-Host "##vso[task.logissue type=error]Found $($vulnerablePackages.Count) vulnerable packages"
+            
+            # Create detailed report
+            $reportPath = "$(Build.ArtifactStagingDirectory)/vulnerability-report.txt"
+            $vulnerablePackages | Out-File -FilePath $reportPath
+            
+            # Set variables for later use
+            Write-Host "##vso[task.setvariable variable=HasVulnerabilities]true"
+            Write-Host "##vso[task.setvariable variable=VulnerabilityCount]$($vulnerablePackages.Count)"
+            Write-Host "##vso[task.setvariable variable=HasCritical]$criticalFound"
+            Write-Host "##vso[task.setvariable variable=HasHigh]$highFound"
+            
+            # Fail if critical vulnerabilities
+            if ($criticalFound) {
+              Write-Host "##vso[task.logissue type=error]Critical vulnerabilities detected!"
+              exit 1
+            }
+          } else {
+            Write-Host "No vulnerable packages found."
+            Write-Host "##vso[task.setvariable variable=HasVulnerabilities]false"
+          }
+    
+    # Microsoft Security DevOps
+    - task: MicrosoftSecurityDevOps@1
+      displayName: 'Microsoft Security DevOps Analysis'
+      inputs:
+        policy: 'microsoft'
+        categories: 'artifacts,IaC,containers,secrets'
+        break: false
+      continueOnError: true
+    
+    # OWASP Dependency Check
+    - task: dependency-check-build-task@6
+      displayName: 'OWASP Dependency Check'
+      inputs:
+        projectName: '$(Build.Repository.Name)'
+        scanPath: '$(System.DefaultWorkingDirectory)'
+        format: 'ALL'
+        failBuildOnCVSS: 7
+      continueOnError: true
+    
+    # Generate SBOM
+    - task: CmdLine@2
+      displayName: 'Install CycloneDX'
+      inputs:
+        script: 'dotnet tool install --global CycloneDX'
+    
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/sbom
+        dotnet CycloneDX $(System.DefaultWorkingDirectory) --json --output $(Build.ArtifactStagingDirectory)/sbom/sbom.json
+        dotnet CycloneDX $(System.DefaultWorkingDirectory) --xml --output $(Build.ArtifactStagingDirectory)/sbom/sbom.xml
+      displayName: 'Generate SBOM (CycloneDX)'
+    
+    # Trivy scanning
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/trivy
+        docker run --rm -v $(System.DefaultWorkingDirectory):/root/src:ro -v $(Build.ArtifactStagingDirectory)/trivy:/root/trivy aquasec/trivy:latest fs --severity CRITICAL,HIGH --format sarif --output /root/trivy/trivy-results.sarif /root/src
+      displayName: 'Trivy Security Scan'
+      continueOnError: true
+    
+    # Publish all security artifacts
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Security Reports'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'security-audit-$(Build.BuildId)'
+    
+    # Create work items for vulnerabilities
+    - task: PowerShell@2
+      displayName: 'Create Work Items for Vulnerabilities'
+      condition: and(eq(variables['HasVulnerabilities'], 'true'), eq('${{ parameters.createWorkItems }}', 'true'))
+      inputs:
+        targetType: 'inline'
+        script: |
+          $org = "$(System.CollectionUri)"
+          $project = "$(System.TeamProject)"
+          $pat = "$(System.AccessToken)"
+          
+          $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(":$pat"))
+          $headers = @{Authorization=("Basic {0}" -f $base64AuthInfo)}
+          
+          $workItemType = "Bug"
+          $title = "Security: Vulnerable NuGet packages detected - $(VulnerabilityCount) issues"
+          $priority = if ($(HasCritical) -eq $true) { 1 } elseif ($(HasHigh) -eq $true) { 2 } else { 3 }
+          
+          $description = @"
+          <div>
+          <h3>Security Vulnerability Report</h3>
+          <p>Automated security scan detected vulnerable NuGet packages.</p>
+          <ul>
+          <li>Total vulnerabilities: $(VulnerabilityCount)</li>
+          <li>Critical severity: $(HasCritical)</li>
+          <li>High severity: $(HasHigh)</li>
+          <li>Build: $(Build.BuildNumber)</li>
+          <li>Branch: $(Build.SourceBranch)</li>
+          </ul>
+          <p>View detailed report in build artifacts.</p>
+          </div>
+          "@
+          
+          $json = @"
+          [
+            {
+              "op": "add",
+              "path": "/fields/System.Title",
+              "value": "$title"
+            },
+            {
+              "op": "add",
+              "path": "/fields/System.Description",
+              "value": "$description"
+            },
+            {
+              "op": "add",
+              "path": "/fields/Microsoft.VSTS.Common.Priority",
+              "value": $priority
+            },
+            {
+              "op": "add",
+              "path": "/fields/System.Tags",
+              "value": "Security; Automated; NuGet"
+            }
+          ]
+          "@
+          
+          $uri = "$org$project/_apis/wit/workitems/`$$workItemType?api-version=7.0"
+          
+          try {
+            $response = Invoke-RestMethod -Uri $uri -Method Post -Body $json -ContentType "application/json-patch+json" -Headers $headers
+            Write-Host "Created work item #$($response.id): $($response.fields.'System.Title')"
+          } catch {
+            Write-Warning "Failed to create work item: $_"
+          }
+
+- stage: ComplianceReport
+  displayName: 'Generate Compliance Report'
+  dependsOn: SecurityAudit
+  condition: always()
+  jobs:
+  - job: GenerateReport
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: PowerShell@2
+      displayName: 'Generate Security Compliance Report'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $report = @"
+          # Security Compliance Report
+          
+          **Date**: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+          **Build**: $(Build.BuildNumber)
+          **Repository**: $(Build.Repository.Name)
+          **Branch**: $(Build.SourceBranch)
+          
+          ## Scan Results Summary
+          
+          - Vulnerability Scanning: $(if ($(HasVulnerabilities) -eq 'true') { 'FAILED' } else { 'PASSED' })
+          - SBOM Generation: COMPLETED
+          - Security Policy Compliance: EVALUATED
+          
+          ## Next Steps
+          
+          1. Review security artifacts in build output
+          2. Address any critical vulnerabilities immediately
+          3. Update dependencies to latest secure versions
+          4. Re-run security scan after fixes
+          
+          ---
+          *This report was automatically generated by the security pipeline.*
+          "@
+          
+          $report | Out-File -FilePath "$(Build.ArtifactStagingDirectory)/compliance-report.md"
+    
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Compliance Report'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/compliance-report.md'
+        ArtifactName: 'compliance-report'

@@ -6,9 +6,14 @@ This repository contains CI/CD workflow templates and setup scripts for CyberDin
 
 ```
 ├── scripts/
-│   ├── bash/              # Bash scripts for Linux/macOS/WSL
-│   └── powershell/        # PowerShell scripts for Windows
+│   ├── github/            # GitHub Actions setup scripts
+│   │   ├── bash/          # Bash scripts for Linux/macOS/WSL
+│   │   └── powershell/    # PowerShell scripts for Windows
+│   └── azure/             # Azure DevOps setup scripts
+│       ├── bash/          # Bash scripts for Linux/macOS/WSL
+│       └── powershell/    # PowerShell scripts for Windows
 ├── workflows/             # Reusable GitHub Actions workflows
+├── pipelines/             # Azure DevOps pipeline templates
 └── docs/                  # Documentation
 ```
 
@@ -16,17 +21,47 @@ This repository contains CI/CD workflow templates and setup scripts for CyberDin
 
 ### Create a Single Repository (Recommended)
 
-The easiest way to create a new .NET repository with full CI/CD:
+The easiest way - use the unified script that prompts for platform choice:
 
 **Bash (Linux/macOS/WSL):**
 ```bash
-cd scripts/bash
+cd scripts
 ./new-repo.sh my-awesome-library
 ```
 
 **PowerShell (Windows):**
 ```powershell
-cd scripts\powershell
+cd scripts
+.\New-Repo.ps1 my-awesome-library
+```
+
+Or specify the platform directly:
+
+#### GitHub Repository
+
+**Bash (Linux/macOS/WSL):**
+```bash
+cd scripts/github/bash
+./new-repo.sh my-awesome-library
+```
+
+**PowerShell (Windows):**
+```powershell
+cd scripts\github\powershell
+.\New-Repo.ps1 my-awesome-library
+```
+
+#### Azure DevOps Repository
+
+**Bash (Linux/macOS/WSL):**
+```bash
+cd scripts/azure/bash
+./new-repo.sh my-awesome-library
+```
+
+**PowerShell (Windows):**
+```powershell
+cd scripts\azure\powershell
 .\New-Repo.ps1 my-awesome-library
 ```
 
@@ -34,17 +69,17 @@ cd scripts\powershell
 
 ### Complete Setup with Multiple Repositories
 
-For setting up the entire CI/CD infrastructure and multiple repositories:
+For setting up the entire CI/CD infrastructure and multiple repositories on GitHub:
 
 **Bash (Linux/macOS/WSL):**
 ```bash
-cd scripts/bash
+cd scripts/github/bash
 ./setup-all.sh
 ```
 
 **PowerShell (Windows):**
 ```powershell
-cd scripts\powershell
+cd scripts\github\powershell
 .\Setup-All.ps1
 ```
 
