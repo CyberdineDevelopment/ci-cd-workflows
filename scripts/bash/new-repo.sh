@@ -297,6 +297,24 @@ create_repository() {
     fi
 }
 
+# Create standard branches
+create_branches() {
+    log_info "Setting up standard branches..."
+    
+    # Ensure we're on master
+    git checkout "$DEFAULT_BRANCH"
+    
+    # Create develop branch if it doesn't exist
+    if ! git show-ref --verify --quiet "refs/remotes/origin/develop"; then
+        log_info "Creating develop branch..."
+        git checkout -b develop
+        git push -u origin develop
+        git checkout "$DEFAULT_BRANCH"
+    else
+        log_info "Develop branch already exists"
+    fi
+}
+
 # Create README function
 create_readme() {
     cat > README.md << EOF
@@ -642,6 +660,7 @@ main() {
     echo ""
     
     create_repository
+    create_branches
     setup_repository_files
     configure_repository
     commit_and_push

@@ -224,6 +224,30 @@ function New-GitHubRepository {
     }
 }
 
+# Create standard branches
+function New-Branches {
+    param(
+        [hashtable]$Config,
+        [string]$RepoName
+    )
+    
+    Write-Info "Setting up standard branches..."
+    
+    # Ensure we're on master
+    git checkout $Config.DefaultBranch
+    
+    # Create develop branch if it doesn't exist
+    $remoteBranches = git branch -r
+    if ($remoteBranches -notcontains "  origin/develop") {
+        Write-Info "Creating develop branch..."
+        git checkout -b develop
+        git push -u origin develop
+        git checkout $Config.DefaultBranch
+    } else {
+        Write-Info "Develop branch already exists"
+    }
+}
+
 # Setup repository files
 function Set-RepositoryFiles {
     param(
@@ -554,6 +578,7 @@ function Main {
     Write-Host ""
     
     New-GitHubRepository -Config $config -RepoName $RepositoryName
+    New-Branches -Config $config -RepoName $RepositoryName
     $repoLicense = if ($License) { $License } else { $config.DefaultLicense }
     Set-RepositoryFiles -Config $config -RepoName $RepositoryName -RepoLicense $repoLicense
     Set-RepositoryConfiguration -Config $config -RepoName $RepositoryName
