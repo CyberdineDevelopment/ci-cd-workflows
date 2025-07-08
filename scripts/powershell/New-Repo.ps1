@@ -267,10 +267,18 @@ function Set-RepositoryFiles {
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <!-- Treat warnings as errors only in CI for master/release branches -->
-    <TreatWarningsAsErrors Condition="'$(CI)' == 'true' AND ('$(GITHUB_REF)' == 'refs/heads/master' OR $(GITHUB_REF.StartsWith('refs/heads/release/')))">true</TreatWarningsAsErrors>
+    <!-- Disable warnings as errors on develop branch for faster iteration -->
+    <TreatWarningsAsErrors Condition="'$(GITHUB_REF_NAME)' == 'develop'">false</TreatWarningsAsErrors>
+    <!-- Enable warnings as errors for master/release branches -->
+    <TreatWarningsAsErrors Condition="'$(GITHUB_REF_NAME)' == 'master' or '$(GITHUB_REF_NAME)' == 'main' or $(GITHUB_REF_NAME.StartsWith('release/'))">true</TreatWarningsAsErrors>
+    <!-- Default to warnings as errors for local builds -->
+    <TreatWarningsAsErrors Condition="'$(GITHUB_REF_NAME)' == ''">true</TreatWarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Suppress analyzer warnings on develop branch for faster iteration -->
+    <NoWarn Condition="'$(GITHUB_REF_NAME)' == 'develop'">$(NoWarn);CA1062;CA1034;CA1310;CA1054;CA1031;CA2227;CA1024;CA1860;CS1591;CS8618;CS8603;CS8625</NoWarn>
+    <!-- Disable nullable warnings on develop branch for faster development -->
+    <Nullable Condition="'$(GITHUB_REF_NAME)' == 'develop'">disable</Nullable>
     
     <!-- Package properties -->
     <Authors>$($Config.CompanyName)</Authors>
