@@ -1,0 +1,12 @@
+# Default owners
+* @cyberdinedevelopment/developers
+
+# CI/CD and build configuration
+/.github/ @cyberdinedevelopment/devops
+/*.props @cyberdinedevelopment/devops
+/*.targets @cyberdinedevelopment/devops
+
+# Security-sensitive files
+/src/**/Security/ @cyberdinedevelopment/security
+/src/**/Authentication/ @cyberdinedevelopment/security
+SECURITY.md @cyberdinedevelopment/security

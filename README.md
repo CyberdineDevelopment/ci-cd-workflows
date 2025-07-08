@@ -14,9 +14,27 @@ This repository contains CI/CD workflow templates and setup scripts for CyberDin
 
 ## Quick Start
 
-### Complete Setup (Recommended)
+### Create a Single Repository (Recommended)
 
-For first-time setup with configuration management:
+The easiest way to create a new .NET repository with full CI/CD:
+
+**Bash (Linux/macOS/WSL):**
+```bash
+cd scripts/bash
+./new-repo.sh my-awesome-library
+```
+
+**PowerShell (Windows):**
+```powershell
+cd scripts\powershell
+.\New-Repo.ps1 my-awesome-library
+```
+
+*On first run, you'll be prompted to configure your organization settings.*
+
+### Complete Setup with Multiple Repositories
+
+For setting up the entire CI/CD infrastructure and multiple repositories:
 
 **Bash (Linux/macOS/WSL):**
 ```bash
@@ -30,30 +48,22 @@ cd scripts\powershell
 .\Setup-All.ps1
 ```
 
-### Create New Repositories Only
-
-**Bash (Linux/macOS/WSL):**
-```bash
-cd scripts/bash
-./setup-cicd-repos.sh
-```
-
-**PowerShell (Windows):**
-```powershell
-cd scripts\powershell
-.\Setup-CICDRepos.ps1
-```
-
 ## Configuration Management
 
-The setup scripts now support configuration management:
+The scripts support configuration management with automatic setup:
 
-- **Organization name**: Your GitHub organization
-- **Default path**: Where repositories are cloned
-- **Repository visibility**: Private or public repositories
-- **Default branch**: Branch name (typically 'master' or 'main')
+- **GitHub Organization**: Your GitHub organization name
+- **Company Name**: Used for package names and copyright
+- **WSL Path**: Where repositories are cloned when using bash scripts (WSL filesystem)
+- **Windows Path**: Where repositories are cloned when using PowerShell scripts
+- **Repository Visibility**: Private or public repositories  
+- **Default Branch**: Branch name (always 'master', never 'main')
+- **Default License**: Apache-2.0 or MIT
 
-Configuration is saved to `config.json` (gitignored) and reused for subsequent runs.
+**First-time behavior**: Scripts will prompt you for configuration including both WSL and Windows paths, saving to `config.json` (gitignored).  
+**Subsequent runs**: Use the saved configuration automatically - bash scripts use WSLPath, PowerShell scripts use WindowsPath.
+
+**Cross-platform note**: This dual-path approach avoids WSL file permission issues while allowing you to work with your preferred directory structure on both platforms.
 
 ### Repository Templates Created
 
@@ -81,7 +91,7 @@ All repositories are configured with:
 - Default branch: `master`
 - .NET 9/10 support
 - Private visibility (can be changed)
-- MIT license
+- Apache-2.0 license (can be changed to MIT)
 - Full security scanning
 
 ## Versioning
@@ -99,4 +109,4 @@ Uses Nerdbank.GitVersioning for deterministic versioning:
 
 ## License
 
-MIT
+Apache-2.0

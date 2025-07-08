@@ -5,9 +5,11 @@ set -e
 
 # Default configuration
 ORG_NAME="cyberdinedevelopment"
+COMPANY_NAME="FractalDataWorks"
 DEFAULT_PATH="/mnt/d/fractaldataworks"
 DEFAULT_BRANCH="master"
 REPO_VISIBILITY="private"
+DEFAULT_LICENSE="Apache-2.0"
 CONFIG_FILE="./config.json"
 RECONFIGURE_ALL=false
 
@@ -81,9 +83,13 @@ load_config() {
         echo -e "${BLUE}=== CI/CD Configuration Setup ===${NC}"
         echo ""
         
-        # Organization
-        read -p "Organization name (default: $ORG_NAME): " org_input
+        # GitHub Organization
+        read -p "GitHub Organization name (default: $ORG_NAME): " org_input
         [[ -n "$org_input" ]] && ORG_NAME="$org_input"
+        
+        # Company Name
+        read -p "Company name (default: FractalDataWorks): " company_input
+        COMPANY_NAME="${company_input:-FractalDataWorks}"
         
         # Default path
         read -p "Default path for repositories (default: $DEFAULT_PATH): " path_input
@@ -104,13 +110,26 @@ load_config() {
         read -p "Default branch name (default: $DEFAULT_BRANCH): " branch_input
         [[ -n "$branch_input" ]] && DEFAULT_BRANCH="$branch_input"
         
+        # Default license
+        echo ""
+        echo "Default license options:"
+        echo "  1) Apache-2.0 (recommended for business)"
+        echo "  2) MIT (simple permissive)"
+        read -p "Select default license (1-2, default: 1): " license_choice
+        case $license_choice in
+            2) DEFAULT_LICENSE="MIT" ;;
+            *) DEFAULT_LICENSE="Apache-2.0" ;;
+        esac
+        
         # Save configuration
         cat > "$CONFIG_FILE" << EOF
 {
-  "Organization": "$ORG_NAME",
+  "GitHubOrganization": "$ORG_NAME",
+  "CompanyName": "$COMPANY_NAME",
   "DefaultPath": "$DEFAULT_PATH",
   "DefaultBranch": "$DEFAULT_BRANCH",
   "RepositoryVisibility": "$REPO_VISIBILITY",
+  "DefaultLicense": "$DEFAULT_LICENSE",
   "ScriptPath": "$(dirname "$0")",
   "LastUpdated": "$(date '+%Y-%m-%d %H:%M:%S')"
 }
@@ -121,16 +140,20 @@ EOF
         
         # Load configuration using jq if available, otherwise use grep/sed
         if command -v jq &> /dev/null; then
-            ORG_NAME=$(jq -r '.Organization' "$CONFIG_FILE")
+            ORG_NAME=$(jq -r '.GitHubOrganization' "$CONFIG_FILE")
+            COMPANY_NAME=$(jq -r '.CompanyName' "$CONFIG_FILE")
             DEFAULT_PATH=$(jq -r '.DefaultPath' "$CONFIG_FILE")
             DEFAULT_BRANCH=$(jq -r '.DefaultBranch' "$CONFIG_FILE")
             REPO_VISIBILITY=$(jq -r '.RepositoryVisibility' "$CONFIG_FILE")
+            DEFAULT_LICENSE=$(jq -r '.DefaultLicense' "$CONFIG_FILE")
         else
             # Fallback parsing without jq
-            ORG_NAME=$(grep '"Organization"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
+            ORG_NAME=$(grep '"GitHubOrganization"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
+            COMPANY_NAME=$(grep '"CompanyName"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
             DEFAULT_PATH=$(grep '"DefaultPath"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
             DEFAULT_BRANCH=$(grep '"DefaultBranch"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
             REPO_VISIBILITY=$(grep '"RepositoryVisibility"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
+            DEFAULT_LICENSE=$(grep '"DefaultLicense"' "$CONFIG_FILE" | sed 's/.*: *"\([^"]*\)".*/\1/')
         fi
     fi
     
@@ -162,7 +185,8 @@ main() {
     
     echo ""
     log_info "Using configuration:"
-    echo "  Organization: $ORG_NAME"
+    echo "  GitHub Organization: $ORG_NAME"
+    echo "  Company Name: $COMPANY_NAME"
     echo "  Default Path: $DEFAULT_PATH"
     echo "  Repository Visibility: $REPO_VISIBILITY"
     echo "  Default Branch: $DEFAULT_BRANCH"
@@ -173,11 +197,13 @@ main() {
     
     # Step 1: Create ci-cd-workflows repository
     log_info "Step 1: Creating ci-cd-workflows repository..."
-    cd "$GITHUB_SETUP_PATH"
+    log_info "Note: This repository should already exist and be cloned locally"
     
-    # Pass configuration to the create script
-    export ORG_NAME DEFAULT_PATH DEFAULT_BRANCH REPO_VISIBILITY
-    bash create-cicd-workflows-repo.sh
+    # Ensure the repository directory exists
+    if [[ ! -d "$DEFAULT_PATH/ci-cd-workflows" ]]; then
+        log_warn "ci-cd-workflows repository not found at $DEFAULT_PATH/ci-cd-workflows"
+        log_info "Please clone it manually: gh repo clone $ORG_NAME/ci-cd-workflows"
+    fi
     
     echo ""
     log_info "Step 2: Repository setup options"
@@ -217,22 +243,24 @@ main() {
     echo -e "${BLUE}CI/CD Workflows Repository:${NC} https://github.com/$ORG_NAME/ci-cd-workflows"
     echo ""
     echo -e "${YELLOW}Configuration:${NC}"
-    echo "  Organization: $ORG_NAME"
+    echo "  GitHub Organization: $ORG_NAME"
+    echo "  Company Name: $COMPANY_NAME"
     echo "  Default Path: $DEFAULT_PATH"
     echo "  Repository Visibility: $REPO_VISIBILITY"
     echo "  Default Branch: $DEFAULT_BRANCH"
+    echo "  Default License: $DEFAULT_LICENSE"
     echo ""
     echo -e "${YELLOW}Available scripts in ci-cd-workflows/scripts/:${NC}"
     echo ""
     echo -e "${BLUE}  Bash:${NC}"
-    echo "    - setup-cicd-repos.sh      # Create new repositories"
-    echo "    - update-repos.sh          # Update existing repositories"
+    echo "    - new-repo.sh              # Create single repository (recommended)"
+    echo "    - setup-cicd-repos.sh      # Create multiple repositories"
     echo "    - add-azure-keyvault.sh    # Add Azure Key Vault integration"
     echo "    - setup-all.sh             # This script (with config management)"
     echo ""
     echo -e "${BLUE}  PowerShell:${NC}"
-    echo "    - Setup-CICDRepos.ps1      # Create new repositories"
-    echo "    - Update-Repos.ps1         # Update existing repositories"
+    echo "    - New-Repo.ps1             # Create single repository (recommended)"
+    echo "    - Setup-CICDRepos.ps1      # Create multiple repositories"
     echo "    - Add-AzureKeyVault.ps1    # Add Azure Key Vault integration"
     echo "    - Setup-All.ps1            # PowerShell version (with config management)"
     echo ""

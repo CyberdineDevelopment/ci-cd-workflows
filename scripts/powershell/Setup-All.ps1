@@ -3,7 +3,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [string]$ConfigPath = ".\config.json",
+    [string]$ConfigPath = "..\..\config.json",
     
     [Parameter(Mandatory = $false)]
     [switch]$ReconfigureAll,
@@ -14,10 +14,12 @@ param(
 
 # Configuration structure
 $DefaultConfig = @{
-    Organization = "cyberdinedevelopment"
-    DefaultPath = "D:\fractaldataworks"
+    GitHubOrganization = "cyberdinedevelopment"
+    CompanyName = "FractalDataWorks"
+    DefaultPath = "$env:USERPROFILE\source\repos"
     DefaultBranch = "master"
     RepositoryVisibility = "private"  # private or public
+    DefaultLicense = "Apache-2.0"  # Apache-2.0 or MIT
     ScriptPath = ""
     LastUpdated = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 }
@@ -98,13 +100,18 @@ function Get-CICDConfiguration {
         Write-Host "=== CI/CD Configuration Setup ===" -ForegroundColor Cyan
         Write-Host ""
         
-        # Organization
-        $orgInput = Read-Host "Organization name (default: $($config.Organization))"
-        if ($orgInput) { $config.Organization = $orgInput }
+        # GitHub Organization
+        $orgInput = Read-Host "GitHub Organization name (default: $($config.GitHubOrganization))"
+        if ($orgInput) { $config.GitHubOrganization = $orgInput }
+        
+        # Company Name
+        $companyInput = Read-Host "Company name (default: $($config.CompanyName))"
+        if ($companyInput) { $config.CompanyName = $companyInput }
         
         # Default path
-        $pathInput = Read-Host "Default path for repositories (default: $($config.DefaultPath))"
-        if ($pathInput) { $config.DefaultPath = $pathInput }
+        $windowsDefault = "$env:USERPROFILE\source\repos"
+        $pathInput = Read-Host "Default path for repositories (default: $windowsDefault)"
+        if ($pathInput) { $config.DefaultPath = $pathInput } else { $config.DefaultPath = $windowsDefault }
         
         # Repository visibility
         Write-Host ""
@@ -120,6 +127,17 @@ function Get-CICDConfiguration {
         # Default branch
         $branchInput = Read-Host "Default branch name (default: $($config.DefaultBranch))"
         if ($branchInput) { $config.DefaultBranch = $branchInput }
+        
+        # Default license
+        Write-Host ""
+        Write-Host "Default license options:"
+        Write-Host "  1) Apache-2.0 (recommended for business)"
+        Write-Host "  2) MIT (simple permissive)"
+        $licenseChoice = Read-Host "Select default license (1-2, default: 1)"
+        switch ($licenseChoice) {
+            "2" { $config.DefaultLicense = "MIT" }
+            default { $config.DefaultLicense = "Apache-2.0" }
+        }
         
         # Set script path
         $config.ScriptPath = Split-Path $PSScriptRoot -Parent
@@ -151,7 +169,7 @@ function Invoke-CreateCICDWorkflows {
     
     $createScript = Join-Path $PSScriptRoot "Create-CICDWorkflowsRepo.ps1"
     if (Test-Path $createScript) {
-        & $createScript -Organization $Config.Organization -DefaultPath $Config.DefaultPath -DefaultBranch $Config.DefaultBranch
+        & $createScript -Organization $Config.GitHubOrganization -DefaultPath $Config.DefaultPath -DefaultBranch $Config.DefaultBranch
     }
     else {
         Write-Error "Create-CICDWorkflowsRepo.ps1 not found at: $createScript"
@@ -172,7 +190,7 @@ function Invoke-CreateRepositories {
         $visibility = if ($Config.RepositoryVisibility -eq "public") { "public" } else { "private" }
         
         & $setupScript `
-            -Organization $Config.Organization `
+            -Organization $Config.GitHubOrganization `
             -DefaultPath $Config.DefaultPath `
             -DefaultBranch $Config.DefaultBranch `
             -RepositoryVisibility $visibility
@@ -195,7 +213,7 @@ function Invoke-CreateTestRepository {
     
     $repoVisibility = if ($Config.RepositoryVisibility -eq "public") { "--public" } else { "--private" }
     
-    $createCommand = "gh repo create `"$($Config.Organization)/test-cicd-pipeline`" " +
+    $createCommand = "gh repo create `"$($Config.GitHubOrganization)/test-cicd-pipeline`" " +
                     "$repoVisibility " +
                     "--description `"Test repository for CI/CD pipeline validation`" " +
                     "--gitignore `"VisualStudio`" " +
@@ -218,10 +236,10 @@ function Show-CompletionSummary {
     Write-Host ""
     Write-Info "=== Setup Complete ==="
     Write-Host ""
-    Write-Host "CI/CD Workflows Repository: https://github.com/$($Config.Organization)/ci-cd-workflows" -ForegroundColor Cyan
+    Write-Host "CI/CD Workflows Repository: https://github.com/$($Config.GitHubOrganization)/ci-cd-workflows" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor Yellow
-    Write-Host "  Organization: $($Config.Organization)"
+    Write-Host "  Organization: $($Config.GitHubOrganization)"
     Write-Host "  Default Path: $($Config.DefaultPath)"
     Write-Host "  Repository Visibility: $($Config.RepositoryVisibility)"
     Write-Host "  Default Branch: $($Config.DefaultBranch)"
@@ -244,7 +262,7 @@ function Show-CompletionSummary {
     Write-Host "1. Clone the ci-cd-workflows repository"
     Write-Host "2. Use scripts from the scripts/ directory"
     Write-Host "3. Add your library code to the /src folder of each repository"
-    Write-Host "4. Update NUGET_API_KEY secret: gh secret set NUGET_API_KEY --org $($Config.Organization)"
+    Write-Host "4. Update NUGET_API_KEY secret: gh secret set NUGET_API_KEY --org $($Config.GitHubOrganization)"
     Write-Host "5. Configure GitHub teams (developers, devops, security)"
     Write-Host ""
     Write-Host "Configuration file: $ConfigPath" -ForegroundColor Green
@@ -287,10 +305,12 @@ function Main {
     
     Write-Host ""
     Write-Info "Using configuration:"
-    Write-Host "  Organization: $($config.Organization)"
+    Write-Host "  GitHub Organization: $($config.GitHubOrganization)"
+    Write-Host "  Company Name: $($config.CompanyName)"
     Write-Host "  Default Path: $($config.DefaultPath)"
     Write-Host "  Repository Visibility: $($config.RepositoryVisibility)"
     Write-Host "  Default Branch: $($config.DefaultBranch)"
+    Write-Host "  Default License: $($config.DefaultLicense)"
     Write-Host ""
     
     # Ensure default path exists
